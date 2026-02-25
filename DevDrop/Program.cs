@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -34,10 +35,16 @@ namespace DevDrop
                     case 1: GetKeyMenu(); break;
                     case 2: EncryptStringMenu(); break;
                     case 3: DecryptStringMenu(); break;
-                    case 4: isRunning = false; break;
+                    case 4:
+                        {
+                            DetonateMethod();
+                            isRunning = false; break;
+
+                        }
+
+                        }
                 }
             }
-        }
 
         #region Logic Methods
 
@@ -82,23 +89,29 @@ namespace DevDrop
                     return;
                 }
 
-                Console.WriteLine("\n Enter the Secret Message:");
-                string secret = Console.ReadLine();
-                if (string.IsNullOrEmpty(secret)) return;
+                Console.WriteLine("\n Enter the Secret Message (finish with an empty line):");
+                string rawSecret = ReadMultilineInput();
+                if (string.IsNullOrEmpty(rawSecret)) return;
+
+                string secret = rawSecret.Trim();
+                if (TryNormalizeJsonInput(secret, out string normalizedSecret))
+                {
+                    Console.WriteLine(" [Valid JSON received]");
+                    secret = normalizedSecret;
+                }
 
                 byte[] secretBytes = Encoding.UTF8.GetBytes(secret);
                 try
                 {
-                    byte[] encrypted = encryptionRsa.Encrypt(secretBytes, RSAEncryptionPadding.OaepSHA256);
-                    string base64Encrypted = Convert.ToBase64String(encrypted);
+                    string payload = EncryptPayload(secretBytes, encryptionRsa);
 
                     DrawHeader("ENCRYPTED PAYLOAD", ConsoleColor.Yellow);
-                    Console.WriteLine(base64Encrypted);
+                    Console.WriteLine(payload);
                     Console.WriteLine("╚" + new string('═', 62) + "╝");
 
                     Console.WriteLine("\n Press any key to copy payload to clipboard...");
                     Console.ReadKey();
-                    CopyToClipboard(base64Encrypted);
+                    CopyToClipboard(payload);
                 }
                 catch (Exception ex)
                 {
@@ -119,12 +132,14 @@ namespace DevDrop
             DrawHeader("DECRYPTION MODE", ConsoleColor.Green);
             Console.WriteLine(" Paste the Encrypted Payload:");
             string input = Console.ReadLine()?.Replace(" ", "+");
+            if (!string.IsNullOrWhiteSpace(input))
+            {
+                input = DecodeUnicodeEscapes(input);
+            }
 
             try
             {
-                byte[] encryptedBytes = Convert.FromBase64String(input);
-                byte[] decryptedBytes = rsa.Decrypt(encryptedBytes, RSAEncryptionPadding.OaepSHA256);
-                string plainText = Encoding.UTF8.GetString(decryptedBytes);
+                string plainText = DecryptPayload(input, rsa);
 
                 DrawHeader("DECRYPTED MESSAGE", ConsoleColor.Green);
                 Console.WriteLine($" > {plainText}");
@@ -147,6 +162,257 @@ namespace DevDrop
         #endregion
 
         #region Helper Tools
+
+        private static string DecodeUnicodeEscapes(string input)
+        {
+            if (string.IsNullOrEmpty(input))
+            {
+                return input;
+            }
+
+            StringBuilder sb = new StringBuilder(input.Length);
+            for (int i = 0; i < input.Length; i++)
+            {
+                if (input[i] == '\\' && i + 5 < input.Length && input[i + 1] == 'u')
+                {
+                    string hex = input.Substring(i + 2, 4);
+                    if (int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out int code))
+                    {
+                        sb.Append((char)code);
+                        i += 5;
+                        continue;
+                    }
+                }
+
+                sb.Append(input[i]);
+            }
+
+            return sb.ToString();
+        }
+
+        private static string EncryptPayload(byte[] data, RSA encryptionRsa)
+        {
+            using Aes aes = Aes.Create();
+            aes.GenerateKey();
+            aes.GenerateIV();
+
+            byte[] encryptedData;
+            using (ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV))
+            using (var ms = new System.IO.MemoryStream())
+            using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+            {
+                cs.Write(data, 0, data.Length);
+                cs.FlushFinalBlock();
+                encryptedData = ms.ToArray();
+            }
+
+            byte[] keyMaterial = new byte[aes.Key.Length + aes.IV.Length];
+            Buffer.BlockCopy(aes.Key, 0, keyMaterial, 0, aes.Key.Length);
+            Buffer.BlockCopy(aes.IV, 0, keyMaterial, aes.Key.Length, aes.IV.Length);
+
+            byte[] encryptedKey = encryptionRsa.Encrypt(keyMaterial, RSAEncryptionPadding.OaepSHA256);
+
+            var payload = new EncryptedPayload
+            {
+                Key = Convert.ToBase64String(encryptedKey),
+                Data = Convert.ToBase64String(encryptedData)
+            };
+
+            return JsonSerializer.Serialize(payload);
+        }
+
+        private static string DecryptPayload(string input, RSA decryptionRsa)
+        {
+            try
+            {
+                if (!TryParsePayload(input, out var payload))
+                {
+                    throw new InvalidOperationException();
+                }
+
+                byte[] encryptedKey = Convert.FromBase64String(payload.Key);
+                byte[] keyMaterial = decryptionRsa.Decrypt(encryptedKey, RSAEncryptionPadding.OaepSHA256);
+
+                byte[] key = new byte[32];
+                byte[] iv = new byte[16];
+                if (keyMaterial.Length < key.Length + iv.Length)
+                {
+                    throw new InvalidOperationException();
+                }
+
+                Buffer.BlockCopy(keyMaterial, 0, key, 0, key.Length);
+                Buffer.BlockCopy(keyMaterial, key.Length, iv, 0, iv.Length);
+
+                byte[] encryptedData = Convert.FromBase64String(payload.Data);
+
+                using Aes aes = Aes.Create();
+                using ICryptoTransform decryptor = aes.CreateDecryptor(key, iv);
+                using var ms = new System.IO.MemoryStream(encryptedData);
+                using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
+                using var sr = new System.IO.StreamReader(cs, Encoding.UTF8);
+                return sr.ReadToEnd();
+            }
+            catch
+            {
+                byte[] encryptedBytes = Convert.FromBase64String(input);
+                byte[] decryptedBytes = decryptionRsa.Decrypt(encryptedBytes, RSAEncryptionPadding.OaepSHA256);
+                return Encoding.UTF8.GetString(decryptedBytes);
+            }
+        }
+
+        private static bool TryParsePayload(string input, out EncryptedPayload payload)
+        {
+            payload = null;
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return false;
+            }
+
+            try
+            {
+                payload = JsonSerializer.Deserialize<EncryptedPayload>(input);
+            }
+            catch
+            {
+                payload = null;
+            }
+
+            if (payload != null && !string.IsNullOrWhiteSpace(payload.Key) && !string.IsNullOrWhiteSpace(payload.Data))
+            {
+                return true;
+            }
+
+            string trimmed = input.Trim();
+            if (trimmed.StartsWith("{") && trimmed.EndsWith("}"))
+            {
+                trimmed = trimmed[1..^1];
+            }
+
+            string key = null;
+            string data = null;
+            string[] parts = trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (string part in parts)
+            {
+                if (part.StartsWith("Key", StringComparison.OrdinalIgnoreCase))
+                {
+                    key = ExtractPayloadValue(part);
+                }
+                else if (part.StartsWith("Data", StringComparison.OrdinalIgnoreCase))
+                {
+                    data = ExtractPayloadValue(part);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(data))
+            {
+                return false;
+            }
+
+            payload = new EncryptedPayload { Key = key, Data = data };
+            return true;
+        }
+
+        private static string ExtractPayloadValue(string part)
+        {
+            int idx = part.IndexOf(':');
+            if (idx < 0 || idx == part.Length - 1)
+            {
+                return null;
+            }
+
+            string value = part[(idx + 1)..].Trim();
+            if (value.StartsWith("\"") && value.EndsWith("\""))
+            {
+                value = value[1..^1];
+            }
+
+            return value;
+        }
+
+        private sealed class EncryptedPayload
+        {
+            public string Key { get; set; }
+            public string Data { get; set; }
+        }
+
+        private static string ReadMultilineInput()
+        {
+            StringBuilder sb = new StringBuilder();
+            while (true)
+            {
+                string line = Console.ReadLine();
+                if (string.IsNullOrEmpty(line))
+                {
+                    break;
+                }
+                sb.AppendLine(line);
+            }
+
+            return sb.ToString().Trim();
+        }
+
+        private static bool TryNormalizeJsonInput(string input, out string normalized)
+        {
+            normalized = input?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(normalized))
+            {
+                return false;
+            }
+
+            if (TryParseJson(normalized))
+            {
+                return true;
+            }
+
+            string candidate = TrimTrailingComma(normalized);
+            bool startsObject = candidate.StartsWith("{");
+            bool startsArray = candidate.StartsWith("[");
+            bool endsObject = candidate.EndsWith("}");
+            bool endsArray = candidate.EndsWith("]");
+
+            if (!startsObject && !startsArray)
+            {
+                candidate = "{\n" + candidate;
+            }
+
+            if (!endsObject && !endsArray)
+            {
+                candidate += "\n}";
+            }
+
+            if (TryParseJson(candidate))
+            {
+                normalized = candidate;
+                return true;
+            }
+
+            normalized = input?.Trim() ?? string.Empty;
+            return false;
+        }
+
+        private static bool TryParseJson(string input)
+        {
+            try
+            {
+                using var _ = JsonDocument.Parse(input);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string TrimTrailingComma(string input)
+        {
+            string trimmed = input.TrimEnd();
+            while (trimmed.EndsWith(",", StringComparison.Ordinal))
+            {
+                trimmed = trimmed[..^1].TrimEnd();
+            }
+
+            return trimmed;
+        }
 
         private static string GenerateKey()
         {
