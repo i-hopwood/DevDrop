@@ -2,8 +2,8 @@
 
 DevDrop is a lightweight, security-focused utility for the ephemeral exchange of encrypted secrets. This repository includes two implementations:
 
-- **Avalonia UI version** (primary desktop experience)
-- **Console version** (legacy/compatibility workflow)
+- **Avalonia UI version**
+- **Console version** 
 
 Both versions use the same core cryptographic approach: RSA-2048 encryption, in-memory private key handling, and timed key disposal.
 
