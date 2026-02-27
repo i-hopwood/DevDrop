@@ -1,26 +1,52 @@
 # DevDrop
 
-DevDrop is a lightweight, security console utility designed for the ephemeral exchange of encrypted secrets. It utilizes RSA-2048 encryption with a volatile memory architecture. Once a private key is generated, it exists only in RAM and is automatically wiped after a 10-minute duration.
+DevDrop is a lightweight, security-focused utility for the ephemeral exchange of encrypted secrets. This repository includes two implementations:
 
-## Technical Overview
-* **Asymmetric Encryption:** Uses RSA-OAEP with SHA256 hashing for modern, robust padding.
-* **Volatile Architecture:** Private keys are never committed to non-volatile storage (HDD/SSD).
-* **Self-Destruct Logic:** Implements a background watchdog using `CancellationTokenSource` and `WaitHandle` to ensure resource disposal.
-* **Automated Clipboard Integration:** Utilizes system-level piping to manage public keys and payloads efficiently.
+- **Avalonia UI version** (primary desktop experience)
+- **Console version** (legacy/compatibility workflow)
 
-## Operational Flow
-1. **Receiver:** Selects option to generate a key. An internal 10-minute timer begins immediately.
-2. **Receiver:** Provides the Public Key to the Sender via a secure communication channel.
-3. **Sender:** Loads the Public Key, encrypts the desired secret, and generates a Base64 payload.
-4. **Sender:** Provides the Encrypted Payload back to the Receiver.
-5. **Receiver:** Decrypts the payload to view the secret. 
-6. **Termination:** Upon manual acknowledgment or timer expiration, the application clears sensitive buffers, disposes of the RSA object, and terminates the process.
+Both versions use the same core cryptographic approach: RSA-2048 encryption, in-memory private key handling, and timed key disposal.
+
+## Shared Security Model
+- **Asymmetric Encryption:** RSA-OAEP with SHA256 padding.
+- **Volatile Key Handling:** Private keys remain in memory only.
+- **Self-Destruct Timer:** Private key material is automatically invalidated after 10 minutes.
+- **Clipboard-Friendly Exchange:** Designed for quick copy/paste transfer of keys and encrypted payloads.
+
+## Version 1: Avalonia UI
+The UI app provides a guided desktop workflow for receiver/sender operations.
+
+### UI Operational Flow
+1. **Receiver:** Generates a key pair in the UI; a 10-minute timer starts.
+2. **Receiver:** Shares the public key with the sender through a secure channel.
+3. **Sender:** Uses the public key to encrypt a secret and produce a Base64 payload.
+4. **Sender:** Sends the encrypted payload back to the receiver.
+5. **Receiver:** Decrypts and views the secret in the app.
+6. **Termination:** On completion or timeout, sensitive buffers are cleared and crypto resources are disposed.
+
+### Run the UI App
+```bash
+dotnet build "DevDrop UI/DevDrop UI.csproj"
+dotnet run --project "DevDrop UI/DevDrop UI.csproj"
+```
+
+## Version 2: Console App 
+The console app preserves the original terminal-driven workflow.
+
+### Console Operational Flow
+1. **Receiver:** Selects the option to generate a key; the 10-minute timer starts.
+2. **Receiver:** Shares the public key with the sender.
+3. **Sender:** Loads the public key and encrypts the secret into a Base64 payload.
+4. **Sender:** Returns the encrypted payload to the receiver.
+5. **Receiver:** Decrypts the payload in the console to view the secret.
+6. **Termination:** On acknowledgment or timeout, key material is cleared and RSA resources are disposed.
+
+### Run the Console App
+```bash
+dotnet build "DevDrop/DevDrop.csproj"
+dotnet run --project "DevDrop/DevDrop.csproj"
+```
 
 ## Installation and Requirements
-* **Runtime:** .NET 6.0 SDK or later.
-* **Environment:** Windows (required for automated clipboard functionality).
-
-To run the application:
-```bash
-dotnet build
-dotnet run
+- **Runtime:** .NET 10 SDK (workspace target).
+- **Environment:** Windows recommended (clipboard-focused workflows)
