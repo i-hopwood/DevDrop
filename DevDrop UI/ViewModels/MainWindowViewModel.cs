@@ -19,7 +19,7 @@ public class EncryptedPayload
     public string Data { get; set; } = string.Empty;
 }
 
-public partial class MainWindowViewModel : ObservableObject
+public partial class MainWindowViewModel : ObservableObject, IDisposable
 {
     [ObservableProperty] private string _myPublicKey = string.Empty;
     [ObservableProperty] private string _recipientPublicKey = string.Empty;
@@ -36,6 +36,7 @@ public partial class MainWindowViewModel : ObservableObject
     private RSA? _rsa;
     private CancellationTokenSource? _timerCts;
     private CancellationTokenSource? _statusCts;
+    private bool _disposed = false;
 
     [RelayCommand]
     private async Task GenerateKeys()
@@ -159,5 +160,37 @@ public partial class MainWindowViewModel : ObservableObject
     {
         await Task.Delay(3000, ct);
         if (!ct.IsCancellationRequested) IsStatusVisible = false;
+    }
+
+    // Memory cleanup when app closes
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        // Cancel all background tasks
+        _timerCts?.Cancel();
+        _statusCts?.Cancel();
+
+        // Dispose RSA key
+        _rsa?.Dispose();
+        _rsa = null;
+
+        // Clear sensitive data
+        MyPublicKey = "";
+        SecretMessage = "";
+        RecipientPublicKey = "";
+        EncryptedPayload = "";
+        PastedPayload = "";
+        DecryptedMessage = "";
+        StatusMessage = "";
+
+        // Force garbage collection to ensure memory is reclaimed
+        GC.SuppressFinalize(this);
+    }
+
+    ~MainWindowViewModel()
+    {
+        Dispose();
     }
 }
