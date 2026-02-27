@@ -1,0 +1,189 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:DevDrop_UI.ViewModels"
+        x:Class="DevDrop_UI.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="DevDrop" Width="900" Height="600" MinWidth="500" MinHeight="500" Background="#F5F5F5">
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#1F1F1F" Padding="20,15">
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel>
+                    <TextBlock Text="DEVDROP" Foreground="White" FontSize="18" FontWeight="Bold"/>
+                    <TextBlock Text="End-to-End Encryption" Foreground="#AAAAAA" FontSize="10"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="15" VerticalAlignment="Center" IsVisible="{Binding IsKeyValid}">
+                    <StackPanel Orientation="Vertical" Spacing="2" HorizontalAlignment="Right">
+                        <TextBlock Text="Key Expires" Foreground="#AAAAAA" FontSize="9"/>
+                        <TextBlock Text="{Binding TimeRemaining}" Foreground="#FFD700" FontWeight="Bold" FontSize="14"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main Content -->
+        <ScrollViewer Grid.Row="1" Padding="0">
+            <StackPanel Spacing="0">
+                
+                <!-- My Identity Section -->
+                <Border Padding="20" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="My Identity" FontSize="12" FontWeight="Bold" Foreground="#333"/>
+                        <Button Content="GENERATE NEW RSA KEY" 
+                                Command="{Binding GenerateKeysCommand}" 
+                                HorizontalAlignment="Stretch" 
+                                Padding="10,8"
+                                FontSize="11"
+                                FontWeight="SemiBold"/>
+                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10">
+                            <TextBlock Grid.Column="0" Text="Your Public Key" FontSize="10" Foreground="#666"/>
+                            <Button Grid.Column="1" 
+                                    Content="📋 Copy" 
+                                    Padding="6,4"
+                                    FontSize="9"
+                                    Background="#0078D4"
+                                    Foreground="White"
+                                    IsVisible="{Binding IsKeyValid}"/>
+                            <TextBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                     Text="{Binding MyPublicKey, Mode=OneWay}" 
+                                     Height="50" 
+                                     IsReadOnly="True" 
+                                     TextWrapping="Wrap" 
+                                     FontSize="9"
+                                     Padding="8"
+                                     BorderBrush="#D0D0D0"
+                                     BorderThickness="1"
+                                     Foreground="#333"
+                                     Background="#FAFAFA"
+                                     AcceptsReturn="True"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Send & Receive Side by Side -->
+                <Grid ColumnDefinitions="*,*" ColumnSpacing="0" RowDefinitions="Auto">
+                    
+                    <!-- Send Message Section -->
+                    <Border Grid.Column="0" Padding="20" BorderBrush="#E0E0E0" BorderThickness="0,0,1,1">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="Send Message" FontSize="12" FontWeight="Bold" Foreground="#333"/>
+                            <TextBlock Text="Recipient Key" FontSize="10" Foreground="#666"/>
+                            <TextBox Text="{Binding RecipientPublicKey, Mode=TwoWay}" 
+                                     Height="50" 
+                                     TextWrapping="Wrap" 
+                                     Padding="8"
+                                     BorderBrush="#D0D0D0"
+                                     BorderThickness="1"
+                                     Foreground="#333"
+                                     Background="White"
+                                     AcceptsReturn="True"
+                                     FontSize="9"/>
+                            <TextBlock Text="Message" FontSize="10" Foreground="#666"/>
+                            <TextBox Text="{Binding SecretMessage, Mode=TwoWay}" 
+                                     Height="60" 
+                                     TextWrapping="Wrap" 
+                                     Padding="8"
+                                     BorderBrush="#D0D0D0"
+                                     BorderThickness="1"
+                                     Foreground="#333"
+                                     Background="White"
+                                     AcceptsReturn="True"
+                                     FontSize="10"/>
+                            <Button Content="ENCRYPT" 
+                                    Command="{Binding EncryptCommand}" 
+                                    HorizontalAlignment="Stretch" 
+                                    Padding="10,8"
+                                    FontSize="11"
+                                    FontWeight="SemiBold"
+                                    Background="#0078D4" 
+                                    Foreground="White"/>
+                            <TextBlock Text="Encrypted" FontSize="10" Foreground="#666"/>
+                            <TextBox Text="{Binding EncryptedPayload, Mode=OneWay}" 
+                                     Height="50" 
+                                     IsReadOnly="True" 
+                                     TextWrapping="Wrap" 
+                                     FontSize="8"
+                                     Padding="8"
+                                     BorderBrush="#D0D0D0"
+                                     BorderThickness="1"
+                                     Foreground="#555"
+                                     Background="#FAFAFA"
+                                     AcceptsReturn="True"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Receive Message Section -->
+                    <Border Grid.Column="1" Padding="20" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1">
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="Receive Message" FontSize="12" FontWeight="Bold" Foreground="#333"/>
+                            <TextBlock Text="Encrypted Payload" FontSize="10" Foreground="#666"/>
+                            <TextBox Text="{Binding PastedPayload, Mode=TwoWay}" 
+                                     Height="50" 
+                                     TextWrapping="Wrap" 
+                                     Padding="8"
+                                     BorderBrush="#D0D0D0"
+                                     BorderThickness="1"
+                                     Foreground="#333"
+                                     Background="White"
+                                     AcceptsReturn="True"
+                                     FontSize="9"/>
+                            <Button Content="DECRYPT" 
+                                    Command="{Binding DecryptCommand}" 
+                                    HorizontalAlignment="Stretch" 
+                                    Padding="10,8"
+                                    FontSize="11"
+                                    FontWeight="SemiBold"
+                                    Background="#107C10" 
+                                    Foreground="White"/>
+                            <TextBlock Text="Decrypted" FontSize="10" Foreground="#666"/>
+                            <TextBox Text="{Binding DecryptedMessage, Mode=OneWay}" 
+                                     Height="60" 
+                                     IsReadOnly="True" 
+                                     TextWrapping="Wrap" 
+                                     FontSize="10"
+                                     Padding="8"
+                                     BorderBrush="#D0D0D0"
+                                     BorderThickness="1"
+                                     Foreground="#333"
+                                     Background="White"
+                                     AcceptsReturn="True"/>
+                            <Button Content="🔐 WIPE LOCAL RAM" 
+                                    Command="{Binding DetonateCommand}" 
+                                    HorizontalAlignment="Stretch" 
+                                    Padding="10,8"
+                                    FontSize="11"
+                                    FontWeight="SemiBold"
+                                    Background="#D83B01" 
+                                    Foreground="White"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Status Notification Footer -->
+        <Border Grid.Row="2" 
+                Background="{Binding StatusColor}" 
+                Padding="15"
+                IsVisible="{Binding IsStatusVisible}"
+                Height="45">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding StatusMessage}" 
+                           Foreground="White" 
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           FontWeight="SemiBold"/>
+                <Button Grid.Column="1"
+                        Content="✕"
+                        Command="{Binding DismissStatusCommand}"
+                        Padding="8,4"
+                        FontSize="12"
+                        Background="Transparent"
+                        Foreground="White"
+                        BorderThickness="0"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
