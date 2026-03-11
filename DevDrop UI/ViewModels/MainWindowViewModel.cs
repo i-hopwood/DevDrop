@@ -133,7 +133,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private void Detonate()
     {
         _timerCts?.Cancel(); _rsa?.Dispose(); _rsa = null;
-        MyPublicKey = ""; DecryptedMessage = ""; IsKeyValid = false;
+
+        MyPublicKey = "";
+        RecipientPublicKey = "";
+        SecretMessage = "";
+        EncryptedPayload = "";
+        PastedPayload = "";
+        DecryptedMessage = "";
+        TimeRemaining = 0;
+        IsKeyValid = false;
+
         UpdateStatus("🔐 Wiped", "#D83B01");
     }
 
