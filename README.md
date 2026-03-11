@@ -2,8 +2,8 @@
 
 DevDrop is a lightweight, security-focused utility for the ephemeral exchange of encrypted secrets. This repository includes two implementations:
 
-- **Avalonia UI version** (primary desktop experience)
-- **Console version** (legacy/compatibility workflow)
+- **Avalonia UI version**
+- **Console version** 
 
 Both versions use the same core cryptographic approach: RSA-2048 encryption, in-memory private key handling, and timed key disposal.
 
@@ -13,7 +13,7 @@ Both versions use the same core cryptographic approach: RSA-2048 encryption, in-
 - **Self-Destruct Timer:** Private key material is automatically invalidated after 10 minutes.
 - **Clipboard-Friendly Exchange:** Designed for quick copy/paste transfer of keys and encrypted payloads.
 
-## Version 1: Avalonia UI (Primary)
+## Version 1: Avalonia UI
 The UI app provides a guided desktop workflow for receiver/sender operations.
 
 ### UI Operational Flow
@@ -30,7 +30,7 @@ dotnet build "DevDrop UI/DevDrop UI.csproj"
 dotnet run --project "DevDrop UI/DevDrop UI.csproj"
 ```
 
-## Version 2: Console App (Legacy)
+## Version 2: Console App 
 The console app preserves the original terminal-driven workflow.
 
 ### Console Operational Flow
