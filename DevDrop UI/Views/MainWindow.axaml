@@ -148,7 +148,7 @@
                                      Foreground="#333"
                                      Background="White"
                                      AcceptsReturn="True"/>
-                            <Button Content="🔐 WIPE LOCAL RAM" 
+                            <Button Content="🔐 CLEAR CACHE" 
                                     Command="{Binding DetonateCommand}" 
                                     HorizontalAlignment="Stretch" 
                                     Padding="10,8"
