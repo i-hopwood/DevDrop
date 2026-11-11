@@ -7,4 +7,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\DevDrop.Core\DevDrop.Core.csproj" />
+  </ItemGroup>
+
 </Project>

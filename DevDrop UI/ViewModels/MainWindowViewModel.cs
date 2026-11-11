@@ -1,8 +1,10 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using DevDrop.Core;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input.Platform;
 using System;
 using System.IO;
 using System.Security.Cryptography;
@@ -12,12 +14,6 @@ using System.Threading;
 using System.Threading.Tasks;
 
 namespace DevDrop_UI.ViewModels;
-
-public class EncryptedPayload
-{
-    public string Key { get; set; } = string.Empty;
-    public string Data { get; set; } = string.Empty;
-}
 
 public partial class MainWindowViewModel : ObservableObject, IDisposable
 {
@@ -43,7 +39,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         try
         {
+            // Replacing a key must not leave the previous private key (or its plaintext) alive.
+            _rsa?.Dispose();
             _rsa = RSA.Create(2048);
+            DecryptedMessage = "";
             MyPublicKey = Convert.ToBase64String(_rsa.ExportRSAPublicKey());
             IsKeyValid = true;
             _timerCts?.Cancel();
@@ -56,6 +55,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
+    private async Task CopyPublicKey()
+    {
+        if (string.IsNullOrEmpty(MyPublicKey)) return;
+        await CopyToClipboard(MyPublicKey);
+        UpdateStatus("✓ Copied", "#4CAF50");
+    }
+
+    [RelayCommand]
     private async Task Encrypt()
     {
         if (string.IsNullOrWhiteSpace(RecipientPublicKey) || string.IsNullOrWhiteSpace(SecretMessage)) return;
@@ -64,7 +71,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             using var rsa = RSA.Create();
             rsa.ImportRSAPublicKey(Convert.FromBase64String(RecipientPublicKey.Trim()), out _);
             var data = Encoding.UTF8.GetBytes(SecretMessage);
-            EncryptedPayload = await Task.Run(() => DoEncrypt(data, rsa));
+            try
+            {
+                EncryptedPayload = await Task.Run(() => DoEncrypt(data, rsa));
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(data);
+            }
+
+            // Don't leave the plaintext on screen: a sender-only session never starts the key timer.
+            SecretMessage = "";
             UpdateStatus("✓ Encrypted", "#4CAF50");
         }
         catch { UpdateStatus("✗ Encryption Failed", "#F44336"); }
@@ -77,18 +94,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             var payload = JsonSerializer.Deserialize<EncryptedPayload>(PastedPayload.Trim());
-            byte[] keyMat = _rsa.Decrypt(Convert.FromBase64String(payload!.Key), RSAEncryptionPadding.OaepSHA256);
-            byte[] key = new byte[32]; byte[] iv = new byte[16];
-            Buffer.BlockCopy(keyMat, 0, key, 0, 32); Buffer.BlockCopy(keyMat, 32, iv, 0, 16);
-            using Aes aes = Aes.Create();
-            using var ms = new MemoryStream(Convert.FromBase64String(payload.Data));
-            using var cs = new CryptoStream(ms, aes.CreateDecryptor(key, iv), CryptoStreamMode.Read);
-            using var sr = new StreamReader(cs, Encoding.UTF8);
-            DecryptedMessage = sr.ReadToEnd();
+            if (payload == null || string.IsNullOrWhiteSpace(payload.Key) || string.IsNullOrWhiteSpace(payload.Data))
+            {
+                UpdateStatus("✗ Invalid Payload", "#F44336");
+                return;
+            }
+
+            DecryptedMessage = DoDecrypt(payload, _rsa);
             UpdateStatus("✓ Decrypted", "#4CAF50");
         }
         catch { UpdateStatus("✗ Decryption Failed", "#F44336"); }
     }
+
+    private static string DoDecrypt(EncryptedPayload payload, RSA rsa) => PayloadCrypto.Decrypt(payload, rsa);
 
     [RelayCommand]
     private void DismissStatus()
@@ -97,35 +115,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _statusCts?.Cancel();
     }
 
-    private string DoEncrypt(byte[] data, RSA rsa)
-    {
-        using Aes aes = Aes.Create();
-        aes.GenerateKey(); aes.GenerateIV();
-        byte[] encData;
-        using (var ms = new MemoryStream())
-        {
-            using (var cs = new CryptoStream(ms, aes.CreateEncryptor(), CryptoStreamMode.Write))
-            {
-                cs.Write(data, 0, data.Length); cs.FlushFinalBlock();
-                encData = ms.ToArray();
-            }
-        }
-        byte[] keyMat = new byte[48];
-        Buffer.BlockCopy(aes.Key, 0, keyMat, 0, 32); Buffer.BlockCopy(aes.IV, 0, keyMat, 32, 16);
-        return JsonSerializer.Serialize(new EncryptedPayload
-        {
-            Key = Convert.ToBase64String(rsa.Encrypt(keyMat, RSAEncryptionPadding.OaepSHA256)),
-            Data = Convert.ToBase64String(encData)
-        });
-    }
+    private static string DoEncrypt(byte[] data, RSA rsa) => PayloadCrypto.Encrypt(data, rsa);
 
     private async Task StartTimer(CancellationToken ct)
     {
-        for (int i = 600; i >= 0 && !ct.IsCancellationRequested; i--)
+        try
         {
-            TimeRemaining = i;
-            await Task.Delay(1000, ct);
+            for (int i = 600; i > 0; i--)
+            {
+                TimeRemaining = i;
+                await Task.Delay(1000, ct);
+            }
         }
+        catch (OperationCanceledException)
+        {
+            return; // cancelled by Detonate, a new key, or shutdown
+        }
+
         if (!ct.IsCancellationRequested) Detonate();
     }
 
@@ -167,7 +173,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task AutoHideStatus(CancellationToken ct)
     {
-        await Task.Delay(3000, ct);
+        try
+        {
+            await Task.Delay(3000, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return; // replaced by a newer status or dismissed
+        }
+
         if (!ct.IsCancellationRequested) IsStatusVisible = false;
     }
 
@@ -194,12 +208,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         DecryptedMessage = "";
         StatusMessage = "";
 
-        // Force garbage collection to ensure memory is reclaimed
         GC.SuppressFinalize(this);
-    }
-
-    ~MainWindowViewModel()
-    {
-        Dispose();
     }
 }

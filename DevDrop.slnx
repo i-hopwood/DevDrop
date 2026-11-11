@@ -1,4 +1,6 @@
 <Solution>
   <Project Path="DevDrop UI/DevDrop UI.csproj" Id="fb4f6353-d7fb-4741-b4b6-3226b3f4b05e" />
+  <Project Path="DevDrop.Core/DevDrop.Core.csproj" />
+  <Project Path="DevDrop.Tests/DevDrop.Tests.csproj" />
   <Project Path="DevDrop/DevDrop.csproj" />
 </Solution>

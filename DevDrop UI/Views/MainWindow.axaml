@@ -39,7 +39,8 @@
                         <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10">
                             <TextBlock Grid.Column="0" Text="Your Public Key" FontSize="10" Foreground="#666"/>
                             <Button Grid.Column="1" 
-                                    Content="📋 Copy" 
+                                    Content="📋 Copy"
+                                    Command="{Binding CopyPublicKeyCommand}"
                                     Padding="6,4"
                                     FontSize="9"
                                     Background="#0078D4"

@@ -1,11 +1,8 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Data.Core;
-using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
 using DevDrop_UI.ViewModels;
 using DevDrop_UI.Views;
-using System.Linq;
 
 namespace DevDrop_UI
 {
@@ -20,9 +17,9 @@ namespace DevDrop_UI
         {
             if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
-                // Avoid duplicate validations from both Avalonia and the CommunityToolkit. 
-                // More info: https://docs.avaloniaui.net/docs/guides/development-guides/data-validation#manage-validationplugins
-                DisableAvaloniaDataAnnotationValidation();
+                // Avalonia 12 no longer registers the DataAnnotations validation plugin by default
+                // (it is opt-in via AppBuilder.WithDataAnnotationsValidation), so there is nothing to
+                // disable to avoid duplicate validation with CommunityToolkit.Mvvm.
                 desktop.MainWindow = new MainWindow
                 {
                     DataContext = new MainWindowViewModel(),
@@ -30,19 +27,6 @@ namespace DevDrop_UI
             }
 
             base.OnFrameworkInitializationCompleted();
-        }
-
-        private void DisableAvaloniaDataAnnotationValidation()
-        {
-            // Get an array of plugins to remove
-            var dataValidationPluginsToRemove =
-                BindingPlugins.DataValidators.OfType<DataAnnotationsValidationPlugin>().ToArray();
-
-            // remove each entry found
-            foreach (var plugin in dataValidationPluginsToRemove)
-            {
-                BindingPlugins.DataValidators.Remove(plugin);
-            }
         }
     }
 }
