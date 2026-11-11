@@ -1,4 +1,5 @@
-﻿using System;
+﻿using DevDrop.Core;
+using System;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
@@ -11,9 +12,8 @@ namespace DevDrop
     internal class Program
     {
         private static bool isRunning = true;
-        private static RSA rsa;
-        private static CancellationTokenSource cts = new CancellationTokenSource();
-        private static CancellationToken token = cts.Token;
+        private static RSA? rsa;
+        private static CancellationTokenSource? cts;
 
         static void Main(string[] args)
         {
@@ -117,6 +117,10 @@ namespace DevDrop
                 {
                     PauseAndContinue($" Encryption failed: {ex.Message}");
                 }
+                finally
+                {
+                    CryptographicOperations.ZeroMemory(secretBytes);
+                }
             }
         }
 
@@ -190,74 +194,19 @@ namespace DevDrop
             return sb.ToString();
         }
 
-        private static string EncryptPayload(byte[] data, RSA encryptionRsa)
-        {
-            using Aes aes = Aes.Create();
-            aes.GenerateKey();
-            aes.GenerateIV();
-
-            byte[] encryptedData;
-            using (ICryptoTransform encryptor = aes.CreateEncryptor(aes.Key, aes.IV))
-            using (var ms = new System.IO.MemoryStream())
-            using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
-            {
-                cs.Write(data, 0, data.Length);
-                cs.FlushFinalBlock();
-                encryptedData = ms.ToArray();
-            }
-
-            byte[] keyMaterial = new byte[aes.Key.Length + aes.IV.Length];
-            Buffer.BlockCopy(aes.Key, 0, keyMaterial, 0, aes.Key.Length);
-            Buffer.BlockCopy(aes.IV, 0, keyMaterial, aes.Key.Length, aes.IV.Length);
-
-            byte[] encryptedKey = encryptionRsa.Encrypt(keyMaterial, RSAEncryptionPadding.OaepSHA256);
-
-            var payload = new EncryptedPayload
-            {
-                Key = Convert.ToBase64String(encryptedKey),
-                Data = Convert.ToBase64String(encryptedData)
-            };
-
-            return JsonSerializer.Serialize(payload);
-        }
+        private static string EncryptPayload(byte[] data, RSA encryptionRsa) =>
+            PayloadCrypto.Encrypt(data, encryptionRsa);
 
         private static string DecryptPayload(string input, RSA decryptionRsa)
         {
-            try
+            // Any failure (bad format, wrong key, tampered data) propagates to the caller,
+            // which reports a generic "decryption failed". There is no legacy/raw-RSA fallback.
+            if (!TryParsePayload(input, out var payload))
             {
-                if (!TryParsePayload(input, out var payload))
-                {
-                    throw new InvalidOperationException();
-                }
-
-                byte[] encryptedKey = Convert.FromBase64String(payload.Key);
-                byte[] keyMaterial = decryptionRsa.Decrypt(encryptedKey, RSAEncryptionPadding.OaepSHA256);
-
-                byte[] key = new byte[32];
-                byte[] iv = new byte[16];
-                if (keyMaterial.Length < key.Length + iv.Length)
-                {
-                    throw new InvalidOperationException();
-                }
-
-                Buffer.BlockCopy(keyMaterial, 0, key, 0, key.Length);
-                Buffer.BlockCopy(keyMaterial, key.Length, iv, 0, iv.Length);
-
-                byte[] encryptedData = Convert.FromBase64String(payload.Data);
-
-                using Aes aes = Aes.Create();
-                using ICryptoTransform decryptor = aes.CreateDecryptor(key, iv);
-                using var ms = new System.IO.MemoryStream(encryptedData);
-                using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
-                using var sr = new System.IO.StreamReader(cs, Encoding.UTF8);
-                return sr.ReadToEnd();
+                throw new InvalidOperationException("Unrecognized payload format.");
             }
-            catch
-            {
-                byte[] encryptedBytes = Convert.FromBase64String(input);
-                byte[] decryptedBytes = decryptionRsa.Decrypt(encryptedBytes, RSAEncryptionPadding.OaepSHA256);
-                return Encoding.UTF8.GetString(decryptedBytes);
-            }
+
+            return PayloadCrypto.Decrypt(payload, decryptionRsa);
         }
 
         private static bool TryParsePayload(string input, out EncryptedPayload payload)
@@ -327,12 +276,6 @@ namespace DevDrop
             }
 
             return value;
-        }
-
-        private sealed class EncryptedPayload
-        {
-            public string Key { get; set; }
-            public string Data { get; set; }
         }
 
         private static string ReadMultilineInput()
@@ -416,16 +359,31 @@ namespace DevDrop
 
         private static string GenerateKey()
         {
+            // Replacing a key must not leave the previous private key alive.
+            rsa?.Dispose();
             rsa = RSA.Create(2048);
             return Convert.ToBase64String(rsa.ExportRSAPublicKey());
         }
 
         public static void StartWatch()
         {
-            cts.CancelAfter(TimeSpan.FromMinutes(10));
-            Task.Run(() =>
+            // Restarting replaces the previous timer instead of stacking watchers.
+            // A superseded timer is cancelled only through its own source and never detonates.
+            cts?.Cancel();
+            var current = new CancellationTokenSource();
+            cts = current;
+
+            Task.Run(async () =>
             {
-                token.WaitHandle.WaitOne();
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(10), current.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return; // superseded by a newer key
+                }
+
                 DetonateMethod();
                 Environment.Exit(0);
             });
@@ -448,12 +406,21 @@ namespace DevDrop
         {
             try
             {
-                ProcessStartInfo psi = new ProcessStartInfo("powershell", $"-Command \"Set-Clipboard -Value '{text}'\"")
+                // Pass the text through stdin so quotes/JSON are never interpreted by a shell.
+                ProcessStartInfo psi = new ProcessStartInfo("clip.exe")
                 {
+                    RedirectStandardInput = true,
                     CreateNoWindow = true,
+                    UseShellExecute = false,
                     WindowStyle = ProcessWindowStyle.Hidden
                 };
-                Process.Start(psi);
+                using Process? p = Process.Start(psi);
+                if (p == null) return;
+                // Payloads and keys are ASCII (Base64/JSON), so ASCII avoids a BOM and codepage issues.
+                byte[] bytes = Encoding.ASCII.GetBytes(text);
+                p.StandardInput.BaseStream.Write(bytes, 0, bytes.Length);
+                p.StandardInput.Close();
+                p.WaitForExit(2000);
             }
             catch { }
         }
